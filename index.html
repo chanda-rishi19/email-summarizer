@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Smart Email Summarizer</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: sans-serif; background: #f5f5f5; padding: 2rem; color: #111; }
+    h1 { font-size: 1.4rem; font-weight: 600; margin-bottom: 1.5rem; }
+    textarea {
+      width: 100%; min-height: 160px; padding: 12px;
+      border: 1px solid #ddd; border-radius: 8px;
+      font-size: 14px; resize: vertical; background: #fff;
+    }
+    .controls { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; align-items: center; }
+    select { padding: 8px 12px; border-radius: 8px; border: 1px solid #ddd; font-size: 14px; }
+    button {
+      padding: 9px 20px; background: #1a6ef5; color: white;
+      border: none; border-radius: 8px; font-size: 14px; cursor: pointer;
+    }
+    button:hover { background: #1558c0; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 1rem 0; }
+    .metric { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 12px; text-align: center; }
+    .metric-num { font-size: 22px; font-weight: 600; }
+    .metric-label { font-size: 12px; color: #666; margin-top: 4px; }
+    .card { background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+    .card-title { font-size: 11px; font-weight: 600; color: #888; text-transform: uppercase; margin-bottom: 10px; }
+    .tag { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 6px; margin: 3px; }
+    .tag-PERSON { background: #d4f4dd; color: #1a6e3a; }
+    .tag-DATE   { background: #fff3cc; color: #7a5800; }
+    .tag-ORG    { background: #dde8ff; color: #1a3ea0; }
+    .tag-GPE    { background: #fde8ff; color: #7a1a99; }
+    #output { display: none; }
+    .bullet { margin-bottom: 6px; padding-left: 14px; position: relative; font-size: 15px; line-height: 1.6; }
+    .bullet::before { content: "•"; position: absolute; left: 0; color: #888; }
+    #status { font-size: 13px; color: #888; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>Smart Email Summarizer</h1>
+
+  <textarea id="email-input" placeholder="Paste your email or article here..."></textarea>
+
+  <div class="controls">
+    <label for="mode" style="font-size:14px;">Mode:</label>
+    <select id="mode">
+      <option value="brief">Brief paragraph</option>
+      <option value="bullets">Bullet points</option>
+      <option value="actions">Action items only</option>
+    </select>
+    <button id="btn" onclick="summarize()">Summarize</button>
+  </div>
+  <div id="status"></div>
+
+  <div id="output">
+    <div class="metrics">
+      <div class="metric"><div class="metric-num" id="m-in">—</div><div class="metric-label">Words in</div></div>
+      <div class="metric"><div class="metric-num" id="m-out">—</div><div class="metric-label">Words out</div></div>
+      <div class="metric"><div class="metric-num" id="m-pct">—</div><div class="metric-label">Shorter</div></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Summary</div>
+      <div id="summary-out"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Extracted Entities</div>
+      <div id="entities-out"></div>
+    </div>
+  </div>
+
+  <script>
+    async function summarize() {
+      const text = document.getElementById("email-input").value.trim();
+      const mode = document.getElementById("mode").value;
+      if (!text) return alert("Please paste some text first.");
+
+      const btn = document.getElementById("btn");
+      btn.disabled = true;
+      document.getElementById("status").textContent = "Summarizing... (first run may take ~30s to load the model)";
+
+      try {
+        const res = await fetch("http://localhost:5000/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text, mode })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        // Metrics
+        const reduction = Math.round((1 - data.word_count_out / data.word_count_in) * 100);
+        document.getElementById("m-in").textContent = data.word_count_in;
+        document.getElementById("m-out").textContent = data.word_count_out;
+        document.getElementById("m-pct").textContent = reduction + "%";
+
+        // Summary
+        const sumEl = document.getElementById("summary-out");
+        if (Array.isArray(data.summary)) {
+          sumEl.innerHTML = data.summary.map(s => `<div class="bullet">${s}</div>`).join("");
+        } else {
+          sumEl.innerHTML = `<p style="font-size:15px;line-height:1.7">${data.summary}</p>`;
+        }
+
+        // Entities
+        document.getElementById("entities-out").innerHTML =
+          data.entities.length
+            ? data.entities.map(e => `<span class="tag tag-${e.label}">${e.text}</span>`).join("")
+            : "<span style='color:#aaa;font-size:13px'>No entities found</span>";
+
+        document.getElementById("output").style.display = "block";
+        document.getElementById("status").textContent = "";
+      } catch (err) {
+        document.getElementById("status").textContent = "Error: " + err.message + ". Is the backend running?";
+      }
+      btn.disabled = false;
+    }
+  </script>
+</body>
+</html>
